@@ -153,6 +153,11 @@ function buildEmailHtml(currentJobs, newJobs) {
               <td style="background:#ffffff;border:1px solid #d9dbe0;border-radius:8px;padding:20px;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
+                    <td style="font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;color:#9ca3af;font-size:12px;line-height:16px;padding-bottom:4px;">
+                      Posted ${postedDate}
+                    </td>
+                  </tr>
+                  <tr>
                     <td style="font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                       <a href="${url}" style="color:${titleColor};font-size:17px;font-weight:600;text-decoration:none;">${title}</a>
                       ${isNew ? '<span style="display:inline-block;background:#ede9fe;color:#dc2626;border-radius:999px;font-size:12px;line-height:16px;padding:4px 8px;margin-left:8px;vertical-align:middle;">NEW</span>' : ''}
@@ -160,7 +165,6 @@ function buildEmailHtml(currentJobs, newJobs) {
                   </tr>
                   <tr>
                     <td style="padding-top:12px;">
-                      <span style="display:inline-block;background:#f8fafc;color:#334155;border-radius:999px;font-size:12px;line-height:16px;padding:5px 10px;margin-right:8px;">${postedDate}</span>
                       <span style="display:inline-block;background:#eef2ff;color:#3730a3;border-radius:999px;font-size:12px;line-height:16px;padding:5px 10px;margin-right:8px;">${department}</span>
                       <span style="display:inline-block;background:#dcfce7;color:#166534;border-radius:999px;font-size:12px;line-height:16px;padding:5px 10px;">${location}</span>
                     </td>
