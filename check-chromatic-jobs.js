@@ -22,6 +22,7 @@ const {
   TEST_EMAIL,
 } = process.env;
 const TEST_EMAIL_MODE = TEST_EMAIL === 'true' || args.includes('--test-email');
+const TEST_EMAIL_NO_NEW_MODE = args.includes('--test-email-no-new');
 
 function timeStamp() {
   return new Date().toISOString();
@@ -119,42 +120,102 @@ function formatJobHtml(job, highlight = false) {
   return `<li>${title}<br>${escapeHtml(job.department || 'No department')}<br>${escapeHtml(job.location || 'No location')}<br>Posted: ${dateText}<br><a href="${escapeHtml(job.jobUrl)}">${escapeHtml(job.jobUrl)}</a></li>`;
 }
 
-function buildEmailHtml(newJobs) {
-  const jobCount = newJobs.length;
-  const headerText = `${jobCount} new role${jobCount === 1 ? '' : 's'} at Chromatic`;
+function buildEmailHtml(currentJobs, newJobs) {
+  const newCount = newJobs.length;
+  const headerText = newCount
+    ? `${newCount} new role${newCount === 1 ? '' : 's'} at Chromatic!`
+    : 'No new jobs today';
+  const newIds = new Set(newJobs.map((job) => job.id));
 
-  const jobCardsHtml = jobCount
-    ? newJobs
-        .map((job) => {
-          const title = escapeHtml(job.title || 'Untitled role');
-          const url = escapeHtml(job.jobUrl || '#');
-          const department = escapeHtml(job.department || job.team || 'General');
-          const location = escapeHtml(job.location || 'Remote');
+  const groupedJobs = currentJobs.reduce((groups, job) => {
+    const category = job.department || job.team || 'General';
+    const key = String(category);
 
-          return `
+    if (!groups[key]) {
+      groups[key] = [];
+    }
+    groups[key].push(job);
+    return groups;
+  }, {});
+
+  const sortedCategories = Object.keys(groupedJobs).sort((a, b) => a.localeCompare(b));
+
+  const renderCard = (job, isNew) => {
+    const title = escapeHtml(job.title || 'Untitled role');
+    const url = escapeHtml(job.jobUrl || '#');
+    const department = escapeHtml(job.department || job.team || 'General');
+    const location = escapeHtml(job.location || 'Remote');
+    const titleColor = isNew ? '#dc2626' : '#4f46e5';
+    const postedDate = escapeHtml(formatPublishedAt(job.publishedAt));
+
+    return `
             <tr>
               <td style="background:#ffffff;border:1px solid #d9dbe0;border-radius:8px;padding:20px;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
                     <td style="font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-                      <a href="${url}" style="color:#4f46e5;font-size:17px;font-weight:600;text-decoration:none;">${title}</a>
+                      <a href="${url}" style="color:${titleColor};font-size:17px;font-weight:600;text-decoration:none;">${title}</a>
+                      ${isNew ? '<span style="display:inline-block;background:#ede9fe;color:#dc2626;border-radius:999px;font-size:12px;line-height:16px;padding:4px 8px;margin-left:8px;vertical-align:middle;">NEW</span>' : ''}
                     </td>
                   </tr>
                   <tr>
                     <td style="padding-top:12px;">
+                      <span style="display:inline-block;background:#f8fafc;color:#334155;border-radius:999px;font-size:12px;line-height:16px;padding:5px 10px;margin-right:8px;">${postedDate}</span>
                       <span style="display:inline-block;background:#eef2ff;color:#3730a3;border-radius:999px;font-size:12px;line-height:16px;padding:5px 10px;margin-right:8px;">${department}</span>
                       <span style="display:inline-block;background:#dcfce7;color:#166534;border-radius:999px;font-size:12px;line-height:16px;padding:5px 10px;">${location}</span>
                     </td>
                   </tr>
                 </table>
               </td>
+            </tr>
+            <tr>
+              <td style="line-height:16px;height:16px;font-size:16px;">&nbsp;</td>
             </tr>`;
+  };
+
+  const newJobCardsHtml = newJobs.length
+    ? newJobs.map((job) => renderCard(job, true)).join('')
+    : '';
+
+  const remainingJobs = currentJobs.filter((job) => !newIds.has(job.id));
+  const groupedRemainingJobs = remainingJobs.reduce((groups, job) => {
+    const category = job.department || job.team || 'General';
+    const key = String(category);
+
+    if (!groups[key]) {
+      groups[key] = [];
+    }
+    groups[key].push(job);
+    return groups;
+  }, {});
+
+  const sortedRemainingCategories = Object.keys(groupedRemainingJobs).sort((a, b) => a.localeCompare(b));
+
+  const groupedJobsHtml = remainingJobs.length
+    ? sortedRemainingCategories
+        .map((category) => {
+          const groupJobs = groupedRemainingJobs[category];
+          const jobsHtml = groupJobs.map((job) => renderCard(job, false)).join('');
+
+          return `
+            <tr>
+              <td style="padding-top:24px;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                <h2 style="margin:0 0 12px;font-size:16px;line-height:24px;font-weight:700;color:#0f172a;">${escapeHtml(category)}</h2>
+              </td>
+            </tr>
+            ${jobsHtml}`;
         })
         .join('')
-    : `
+    : '';
+
+  const noJobsHtml = !currentJobs.length
+    ? `
             <tr>
-              <td style="padding:20px 0;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;color:#64748b;font-size:14px;line-height:20px;">No new roles were detected at this time.</td>
-            </tr>`;
+              <td style="padding:20px 0;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;color:#64748b;font-size:14px;line-height:20px;">No current jobs are listed at this time.</td>
+            </tr>`
+    : '';
+
+  const jobCardsHtml = newJobCardsHtml + groupedJobsHtml + noJobsHtml;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -170,11 +231,11 @@ function buildEmailHtml(newJobs) {
             <tr>
               <td style="padding:24px 0 12px;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;text-align:left;">
                 <h1 style="margin:0;font-size:20px;line-height:28px;font-weight:700;color:#0f172a;">${escapeHtml(headerText)}</h1>
-                <p style="margin:8px 0 0;font-size:14px;line-height:20px;color:#64748b;">Spotted on their careers page just now.</p>
+                <p style="margin:8px 0 0;font-size:14px;line-height:20px;color:#64748b;">Current job opportunities at Chromatic.</p>
               </td>
             </tr>
             <tr>
-              <td style="padding-top:16px;">
+              <td style="padding-top:8px;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   ${jobCardsHtml}
                 </table>
@@ -205,7 +266,7 @@ function buildJobEmail(currentJobs, newJobs) {
 
   return {
     text: `Chromatic Job Watcher status:\n\n${newJobsText}${allJobsText}${footerText}`,
-    html: buildEmailHtml(newJobs),
+    html: buildEmailHtml(currentJobs, newJobs),
   };
 }
 
@@ -255,8 +316,27 @@ async function sendTestEmail() {
   await sendJobsEmail(currentJobs, sampleNewJobs);
 }
 
+async function sendTestEmailNoNew() {
+  const payload = await fetchJson(ASHBY_API_URL);
+  if (!payload || !Array.isArray(payload.jobs)) {
+    throw new Error('Unexpected API response while building no-new test email.');
+  }
+
+  const currentJobs = payload.jobs.map(normalizeJob);
+  const sampleNewJobs = [];
+  const subject = 'Chromatic job watcher: test email (no new postings)';
+  await sendJobsEmail(currentJobs, sampleNewJobs);
+}
+
 async function run() {
   logInfo(`Starting Chromatic watcher on ${isRender ? 'Render' : 'local'} environment`);
+  if (TEST_EMAIL_NO_NEW_MODE) {
+    logInfo('TEST_EMAIL_NO_NEW_MODE enabled; sending a single no-new test email.');
+    await sendTestEmailNoNew();
+    logSuccess('No-new test email completed successfully.');
+    return;
+  }
+
   if (TEST_EMAIL_MODE) {
     logInfo('TEST_EMAIL_MODE enabled; sending a single test email.');
     await sendTestEmail();
