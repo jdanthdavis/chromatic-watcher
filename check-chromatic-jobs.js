@@ -119,6 +119,80 @@ function formatJobHtml(job, highlight = false) {
   return `<li>${title}<br>${escapeHtml(job.department || 'No department')}<br>${escapeHtml(job.location || 'No location')}<br>Posted: ${dateText}<br><a href="${escapeHtml(job.jobUrl)}">${escapeHtml(job.jobUrl)}</a></li>`;
 }
 
+function buildEmailHtml(newJobs) {
+  const jobCount = newJobs.length;
+  const headerText = `${jobCount} new role${jobCount === 1 ? '' : 's'} at Chromatic`;
+
+  const jobCardsHtml = jobCount
+    ? newJobs
+        .map((job) => {
+          const title = escapeHtml(job.title || 'Untitled role');
+          const url = escapeHtml(job.jobUrl || '#');
+          const department = escapeHtml(job.department || job.team || 'General');
+          const location = escapeHtml(job.location || 'Remote');
+
+          return `
+            <tr>
+              <td style="background:#ffffff;border:1px solid #d9dbe0;border-radius:8px;padding:20px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td style="font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                      <a href="${url}" style="color:#4f46e5;font-size:17px;font-weight:600;text-decoration:none;">${title}</a>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding-top:12px;">
+                      <span style="display:inline-block;background:#eef2ff;color:#3730a3;border-radius:999px;font-size:12px;line-height:16px;padding:5px 10px;margin-right:8px;">${department}</span>
+                      <span style="display:inline-block;background:#dcfce7;color:#166534;border-radius:999px;font-size:12px;line-height:16px;padding:5px 10px;">${location}</span>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>`;
+        })
+        .join('')
+    : `
+            <tr>
+              <td style="padding:20px 0;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;color:#64748b;font-size:14px;line-height:20px;">No new roles were detected at this time.</td>
+            </tr>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>${escapeHtml(headerText)}</title>
+  </head>
+  <body style="margin:0;padding:0;background:#f2f4f6;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f2f4f6;width:100%;min-width:100%;">
+      <tr>
+        <td align="center" style="padding:20px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;">
+            <tr>
+              <td style="padding:24px 0 12px;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;text-align:left;">
+                <h1 style="margin:0;font-size:20px;line-height:28px;font-weight:700;color:#0f172a;">${escapeHtml(headerText)}</h1>
+                <p style="margin:8px 0 0;font-size:14px;line-height:20px;color:#64748b;">Spotted on their careers page just now.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding-top:16px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  ${jobCardsHtml}
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding-top:20px;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;font-size:13px;line-height:20px;color:#64748b;">
+                Automated check via your Chromatic job monitor.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
+
 function buildJobEmail(currentJobs, newJobs) {
   const newIds = new Set(newJobs.map((job) => job.id));
 
@@ -129,16 +203,9 @@ function buildJobEmail(currentJobs, newJobs) {
   const allJobsText = `All current jobs:\n${currentJobs.map((job) => formatJobText(job)).join('\n\n')}\n\n`;
   const footerText = `Check the job board: ${ASHBY_API_URL}`;
 
-  const newJobsHtml = newJobs.length
-    ? `<p><strong>New job(s):</strong></p><ul>${newJobs.map((job) => formatJobHtml(job, true)).join('')}</ul>`
-    : `<p><strong>No new jobs detected.</strong></p>`;
-
-  const allJobsHtml = `<p><strong>All current jobs:</strong></p><ul>${currentJobs.map((job) => formatJobHtml(job, newIds.has(job.id))).join('')}</ul>`;
-  const footerHtml = `<p>Check the job board: <a href="${ASHBY_API_URL}">${ASHBY_API_URL}</a></p>`;
-
   return {
     text: `Chromatic Job Watcher status:\n\n${newJobsText}${allJobsText}${footerText}`,
-    html: `<html><body><p>Chromatic Job Watcher status:</p>${newJobsHtml}${allJobsHtml}${footerHtml}</body></html>`,
+    html: buildEmailHtml(newJobs),
   };
 }
 
