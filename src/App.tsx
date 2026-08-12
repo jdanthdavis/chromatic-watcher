@@ -8,7 +8,7 @@ import { ErrorState } from './components/ErrorState';
 import { HistoryTimeline } from './components/HistoryTimeline';
 import { ChromaticBuildList } from './components/ChromaticBuildList';
 import { fetchChromaticBuilds, fetchWatcherState } from './api';
-import { formatRelativeTime } from './utils';
+import { dedupeBuildsByNumber, formatRelativeTime } from './utils';
 import type { ChromaticBuild, Job, WatcherState } from './types';
 
 function groupByDepartment(jobs: Job[]): Map<string, Job[]> {
@@ -22,6 +22,40 @@ function groupByDepartment(jobs: Job[]): Map<string, Job[]> {
   return new Map([...groups.entries()].sort(([a], [b]) => a.localeCompare(b)));
 }
 
+type TabKey = 'jobs' | 'builds' | 'checks';
+
+const TAB_LABELS: Record<TabKey, string> = {
+  jobs: 'Jobs',
+  builds: 'Chromatic Builds',
+  checks: 'Checks',
+};
+
+interface TabBarProps {
+  active: TabKey;
+  onChange: (tab: TabKey) => void;
+  counts: Record<TabKey, number>;
+}
+
+function TabBar({ active, onChange, counts }: TabBarProps) {
+  const keys: TabKey[] = ['jobs', 'builds', 'checks'];
+
+  return (
+    <div className="tabs">
+      {keys.map((key) => (
+        <button
+          key={key}
+          type="button"
+          className={`tab${active === key ? ' tab--active' : ''}`}
+          onClick={() => onChange(key)}
+        >
+          {TAB_LABELS[key]}
+          <span className="tab__count">{counts[key]}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function App() {
   const [state, setState] = useState<WatcherState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +63,7 @@ export function App() {
   const [buildsError, setBuildsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabKey>('jobs');
 
   // The two fetches are independent — a broken Chromatic builds panel
   // shouldn't take down the primary job-board view, and vice versa.
@@ -70,9 +105,40 @@ export function App() {
 
   const stats: Stat[] = [
     { label: 'Open roles', value: jobs.length },
-    { label: 'New today', value: newJobs.length, emphasize: newJobs.length > 0 },
+    { label: 'New today', value: newJobs.length, tone: newJobs.length > 0 ? 'highlight' : undefined },
     { label: 'Departments', value: departmentCount },
     { label: 'Removed', value: state?.removedCount ?? 0 },
+  ];
+
+  // One build fires several webhook events as it progresses through
+  // statuses, so raw entries overcount — dedupe to one row per build
+  // before showing counts or the list itself.
+  const dedupedBuilds = useMemo(() => dedupeBuildsByNumber(builds), [builds]);
+  const passedBuilds = useMemo(() => dedupedBuilds.filter((build) => build.result === 'SUCCESS'), [dedupedBuilds]);
+  const failedBuilds = useMemo(() => dedupedBuilds.filter((build) => build.result === 'FAILURE'), [dedupedBuilds]);
+  const changedBuilds = useMemo(() => dedupedBuilds.filter((build) => build.changeCount > 0), [dedupedBuilds]);
+
+  const buildStats: Stat[] = [
+    { label: 'Builds tracked', value: dedupedBuilds.length },
+    { label: 'Passed', value: passedBuilds.length, tone: passedBuilds.length > 0 ? 'good' : undefined },
+    { label: 'Failed', value: failedBuilds.length, tone: failedBuilds.length > 0 ? 'bad' : undefined },
+    { label: 'Changes flagged', value: changedBuilds.length, tone: changedBuilds.length > 0 ? 'highlight' : undefined },
+  ];
+
+  const historyEntries = state?.history ?? [];
+  const errorChecks = useMemo(() => historyEntries.filter((entry) => entry.status === 'error'), [historyEntries]);
+  const errorRate =
+    historyEntries.length > 0 ? Math.round((errorChecks.length / historyEntries.length) * 100) : 0;
+  const totalChangesAcrossChecks = useMemo(
+    () => historyEntries.reduce((sum, entry) => sum + entry.newCount + entry.removedCount, 0),
+    [historyEntries],
+  );
+
+  const checksStats: Stat[] = [
+    { label: 'Checks tracked', value: historyEntries.length },
+    { label: 'Errors', value: errorChecks.length, tone: errorChecks.length > 0 ? 'bad' : undefined },
+    { label: 'Error rate', value: errorRate, suffix: '%', tone: errorRate > 0 ? 'bad' : 'good' },
+    { label: 'Total changes', value: totalChangesAcrossChecks, tone: totalChangesAcrossChecks > 0 ? 'highlight' : undefined },
   ];
 
   if (loading) {
@@ -103,27 +169,42 @@ export function App() {
         onCheckNow={() => load(true)}
       />
 
-      <StatRow stats={stats} />
+      <TabBar
+        active={activeTab}
+        onChange={setActiveTab}
+        counts={{ jobs: jobs.length, builds: dedupedBuilds.length, checks: state.history.length }}
+      />
 
-      <NewJobsSection jobs={newJobs} />
-
-      {jobs.length === 0 ? (
-        <EmptyState />
-      ) : (
-        [...remainingByDepartment.entries()].map(([department, deptJobs]) => (
-          <DepartmentGroup key={department} department={department} jobs={deptJobs} />
-        ))
+      {activeTab === 'jobs' && (
+        <>
+          <StatRow stats={stats} />
+          <NewJobsSection jobs={newJobs} />
+          {jobs.length === 0 ? (
+            <EmptyState />
+          ) : (
+            [...remainingByDepartment.entries()].map(([department, deptJobs]) => (
+              <DepartmentGroup key={department} department={department} jobs={deptJobs} />
+            ))
+          )}
+        </>
       )}
 
-      <p className="section-label">Recent Chromatic builds</p>
-      {buildsError ? (
-        <p className="history-row__timestamp">Couldn't load recent Chromatic builds.</p>
-      ) : (
-        <ChromaticBuildList builds={builds} />
-      )}
+      {activeTab === 'builds' &&
+        (buildsError ? (
+          <p className="history-row__timestamp">Couldn't load recent Chromatic builds.</p>
+        ) : (
+          <>
+            <StatRow stats={buildStats} />
+            <ChromaticBuildList builds={dedupedBuilds} limit={20} />
+          </>
+        ))}
 
-      <p className="section-label">Recent checks</p>
-      <HistoryTimeline history={state.history} />
+      {activeTab === 'checks' && (
+        <>
+          <StatRow stats={checksStats} />
+          <HistoryTimeline history={state.history} limit={20} />
+        </>
+      )}
     </div>
   );
 }
