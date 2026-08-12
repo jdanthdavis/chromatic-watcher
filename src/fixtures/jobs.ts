@@ -1,4 +1,11 @@
-import type { Job, WatcherState } from '../types';
+import type { HistoryEntry, Job, WatcherState } from '../types';
+
+const sampleHistory: HistoryEntry[] = [
+  { timestamp: '2026-08-11T14:32:00.000Z', status: 'new-jobs', jobCount: 8, newCount: 2, removedCount: 0, error: null },
+  { timestamp: '2026-08-11T06:32:00.000Z', status: 'no-change', jobCount: 6, newCount: 0, removedCount: 0, error: null },
+  { timestamp: '2026-08-10T14:32:00.000Z', status: 'no-change', jobCount: 6, newCount: 0, removedCount: 0, error: null },
+  { timestamp: '2026-08-10T06:32:00.000Z', status: 'baseline', jobCount: 6, newCount: 0, removedCount: 0, error: null },
+];
 
 // Sample data only — shaped like the real Ashby payload normalizeJob() produces,
 // so the dashboard can be built and Chromatic-tested without a live Redis connection.
@@ -100,6 +107,7 @@ export const sampleWatcherState: WatcherState = {
   jobs: sampleJobs,
   newJobIds: ['job-staff-product-designer', 'job-developer-advocate'],
   removedCount: 0,
+  history: sampleHistory,
 };
 
 export const emptyWatcherState: WatcherState = {
@@ -109,6 +117,7 @@ export const emptyWatcherState: WatcherState = {
   jobs: [],
   newJobIds: [],
   removedCount: 0,
+  history: [],
 };
 
 export const erroredWatcherState: WatcherState = {
@@ -118,4 +127,7 @@ export const erroredWatcherState: WatcherState = {
   jobs: [],
   newJobIds: [],
   removedCount: 0,
+  history: [
+    { timestamp: '2026-08-11T09:02:00.000Z', status: 'error', jobCount: 0, newCount: 0, removedCount: 0, error: 'Redis connection timed out' },
+  ],
 };
