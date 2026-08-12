@@ -8,6 +8,7 @@ if (!isRender) {
 
 const http = require('http');
 const { createClient } = require('redis');
+const cronParser = require('cron-parser');
 
 const REDIS_KEY = 'chromatic-jobs';
 const META_KEY = 'chromatic-jobs:meta';
@@ -20,9 +21,11 @@ const {
   // shows "stale" instead of "connected". Render's cron schedule isn't
   // visible to this process, so this is a generous default, not a promise.
   STALE_AFTER_MINUTES = '120',
-  // Optional: if set, lets the dashboard show an estimated next-run time as
-  // lastCheckedAt + this interval. Leave unset to just omit it.
-  CRON_INTERVAL_MINUTES,
+  // Optional: the cron job's actual schedule (standard 5-field cron syntax,
+  // e.g. "0 13,21 * * *"), used to compute a real next-run time. Must be
+  // kept in sync with the cron job's schedule in Render by hand — there's
+  // no API linkage between the two services. Leave unset to omit nextRunAt.
+  CRON_SCHEDULE,
 } = process.env;
 
 if (!REDIS_URL) {
@@ -75,11 +78,15 @@ function computeStatus(meta) {
   return 'connected';
 }
 
-function computeNextRunAt(meta) {
-  if (!meta?.lastCheckedAt || !CRON_INTERVAL_MINUTES) return null;
-  const lastCheckedAt = new Date(meta.lastCheckedAt);
-  if (Number.isNaN(lastCheckedAt.getTime())) return null;
-  return new Date(lastCheckedAt.getTime() + Number(CRON_INTERVAL_MINUTES) * 60_000).toISOString();
+function computeNextRunAt() {
+  if (!CRON_SCHEDULE) return null;
+  try {
+    const interval = cronParser.parseExpression(CRON_SCHEDULE, { utc: true });
+    return interval.next().toISOString();
+  } catch (err) {
+    logError(`Invalid CRON_SCHEDULE "${CRON_SCHEDULE}"`, err);
+    return null;
+  }
 }
 
 async function getWatcherState() {
@@ -96,7 +103,7 @@ async function getWatcherState() {
   return {
     status: computeStatus(meta),
     lastCheckedAt: meta?.lastCheckedAt ?? null,
-    nextRunAt: computeNextRunAt(meta),
+    nextRunAt: computeNextRunAt(),
     jobs,
     newJobIds: meta?.newJobIds ?? [],
     removedCount: meta?.removedCount ?? 0,
