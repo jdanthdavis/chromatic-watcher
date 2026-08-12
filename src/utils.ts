@@ -1,3 +1,28 @@
+import type { HistoryEntry } from './types';
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+export function summarizeHistoryEntry(entry: HistoryEntry): string {
+  switch (entry.status) {
+    case 'baseline':
+      return `Baseline saved — ${plural(entry.jobCount, 'job')}`;
+    case 'new-jobs':
+      return entry.removedCount > 0
+        ? `${plural(entry.newCount, 'new job')}, ${plural(entry.removedCount, 'removed')}`
+        : plural(entry.newCount, 'new job');
+    case 'removed-jobs':
+      return `${plural(entry.removedCount, 'job')} removed`;
+    case 'no-change':
+      return `No changes — ${plural(entry.jobCount, 'job')}`;
+    case 'error':
+      return `Check failed — ${entry.error ?? 'Unknown error'}`;
+    default:
+      return 'Check completed';
+  }
+}
+
 export function formatPublishedAt(publishedAt: string | null): string {
   if (!publishedAt) return 'Unknown posting date';
   const date = new Date(publishedAt);

@@ -11,6 +11,7 @@ const { createClient } = require('redis');
 
 const REDIS_KEY = 'chromatic-jobs';
 const META_KEY = 'chromatic-jobs:meta';
+const HISTORY_KEY = 'chromatic-jobs:history';
 
 const {
   REDIS_URL,
@@ -82,10 +83,15 @@ function computeNextRunAt(meta) {
 }
 
 async function getWatcherState() {
-  const [jobsRaw, metaRaw] = await Promise.all([redis.get(REDIS_KEY), redis.get(META_KEY)]);
+  const [jobsRaw, metaRaw, historyRaw] = await Promise.all([
+    redis.get(REDIS_KEY),
+    redis.get(META_KEY),
+    redis.lRange(HISTORY_KEY, 0, -1),
+  ]);
 
   const jobs = jobsRaw ? JSON.parse(jobsRaw) : [];
   const meta = metaRaw ? JSON.parse(metaRaw) : null;
+  const history = historyRaw.map((entry) => JSON.parse(entry));
 
   return {
     status: computeStatus(meta),
@@ -94,6 +100,7 @@ async function getWatcherState() {
     jobs,
     newJobIds: meta?.newJobIds ?? [],
     removedCount: meta?.removedCount ?? 0,
+    history,
   };
 }
 

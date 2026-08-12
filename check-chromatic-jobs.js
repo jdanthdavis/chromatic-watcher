@@ -12,6 +12,9 @@ const REDIS_KEY = 'chromatic-jobs';
 // Run metadata (last-checked time, what changed, last error) — read by the
 // dashboard API (server/api.js) to show live status alongside the job list.
 const META_KEY = 'chromatic-jobs:meta';
+// Rolling log of past runs, newest first — powers the dashboard's history timeline.
+const HISTORY_KEY = 'chromatic-jobs:history';
+const HISTORY_LIMIT = 20;
 const args = process.argv.slice(2);
 const {
   REDIS_URL,
@@ -363,6 +366,16 @@ async function writeErrorMeta(redis, error) {
   }
 }
 
+async function pushHistory(redis, entry) {
+  try {
+    await redis.lPush(HISTORY_KEY, JSON.stringify({ timestamp: timeStamp(), ...entry }));
+    await redis.lTrim(HISTORY_KEY, 0, HISTORY_LIMIT - 1);
+  } catch (historyError) {
+    // Best-effort, same reasoning as writeErrorMeta above.
+    logError('Could not record run history to Redis', historyError);
+  }
+}
+
 async function run() {
   logInfo(`Starting Chromatic watcher on ${isRender ? 'Render' : 'local'} environment`);
   if (TEST_EMAIL_NO_NEW_MODE) {
@@ -405,6 +418,7 @@ async function run() {
       await sendJobsEmail(currentJobs, newJobs);
       await redis.set(REDIS_KEY, JSON.stringify(currentJobs, null, 2));
       await writeMeta(redis, { newJobIds: [], removedCount: 0 });
+      await pushHistory(redis, { status: 'baseline', jobCount: currentJobs.length, newCount: 0, removedCount: 0, error: null });
       logSuccess(`Saved ${currentJobs.length} jobs to Redis under ${REDIS_KEY}.`);
       return;
     }
@@ -431,9 +445,23 @@ async function run() {
     await sendJobsEmail(currentJobs, newJobs);
     await redis.set(REDIS_KEY, JSON.stringify(currentJobs, null, 2));
     await writeMeta(redis, { newJobIds: newJobs.map((job) => job.id), removedCount: removedJobs.length });
+    await pushHistory(redis, {
+      status: newJobs.length > 0 ? 'new-jobs' : removedJobs.length > 0 ? 'removed-jobs' : 'no-change',
+      jobCount: currentJobs.length,
+      newCount: newJobs.length,
+      removedCount: removedJobs.length,
+      error: null,
+    });
     logSuccess('Current job state saved to Redis.');
   } catch (error) {
     await writeErrorMeta(redis, error);
+    await pushHistory(redis, {
+      status: 'error',
+      jobCount: 0,
+      newCount: 0,
+      removedCount: 0,
+      error: error instanceof Error ? error.message : String(error),
+    });
     throw error;
   } finally {
     await redis.disconnect();

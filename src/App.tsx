@@ -5,6 +5,7 @@ import { NewJobsSection } from './components/NewJobsSection';
 import { DepartmentGroup } from './components/DepartmentGroup';
 import { EmptyState } from './components/EmptyState';
 import { ErrorState } from './components/ErrorState';
+import { HistoryTimeline } from './components/HistoryTimeline';
 import { fetchWatcherState } from './api';
 import { formatRelativeTime } from './utils';
 import type { Job, WatcherState } from './types';
@@ -96,6 +97,9 @@ export function App() {
           <DepartmentGroup key={department} department={department} jobs={deptJobs} />
         ))
       )}
+
+      <p className="section-label">Recent checks</p>
+      <HistoryTimeline history={state.history} />
     </div>
   );
 }

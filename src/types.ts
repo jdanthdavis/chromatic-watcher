@@ -14,6 +14,17 @@ export interface Job {
 
 export type WatcherStatus = 'connected' | 'stale' | 'error';
 
+export type HistoryStatus = 'baseline' | 'new-jobs' | 'removed-jobs' | 'no-change' | 'error';
+
+export interface HistoryEntry {
+  timestamp: string;
+  status: HistoryStatus;
+  jobCount: number;
+  newCount: number;
+  removedCount: number;
+  error: string | null;
+}
+
 export interface WatcherState {
   status: WatcherStatus;
   lastCheckedAt: string | null;
@@ -21,4 +32,5 @@ export interface WatcherState {
   jobs: Job[];
   newJobIds: string[];
   removedCount: number;
+  history: HistoryEntry[];
 }
