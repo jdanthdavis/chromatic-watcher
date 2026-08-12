@@ -9,16 +9,22 @@ export function formatPublishedAt(publishedAt: string | null): string {
   });
 }
 
+// Handles both directions, since it's used for "last checked" (past) and
+// "next run" (future) — a plain "X minutes ago" would misreport future times.
 export function formatRelativeTime(isoString: string | null): string {
   if (!isoString) return 'never';
   const then = new Date(isoString).getTime();
   if (Number.isNaN(then)) return 'unknown';
+
   const diffMs = Date.now() - then;
-  const diffMin = Math.round(diffMs / 60000);
+  const isPast = diffMs >= 0;
+  const diffMin = Math.round(Math.abs(diffMs) / 60000);
+
   if (diffMin < 1) return 'just now';
-  if (diffMin === 1) return '1 minute ago';
-  if (diffMin < 60) return `${diffMin} minutes ago`;
-  const diffHr = Math.round(diffMin / 60);
-  if (diffHr === 1) return '1 hour ago';
-  return `${diffHr} hours ago`;
+
+  const [amount, unit] =
+    diffMin < 60 ? [diffMin, 'minute'] : [Math.round(diffMin / 60), 'hour'];
+  const phrase = `${amount} ${unit}${amount === 1 ? '' : 's'}`;
+
+  return isPast ? `${phrase} ago` : `in ${phrase}`;
 }
