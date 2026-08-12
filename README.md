@@ -75,7 +75,7 @@ Extra environment variables (all optional):
 
 - `PORT` (default `8787`)
 - `STALE_AFTER_MINUTES` (default `120`) — how long since the last successful check before the dashboard shows "stale" instead of "connected"
-- `CRON_INTERVAL_MINUTES` — if set, lets the dashboard show an estimated next-run time; omitted otherwise, since this process can't see Render's actual cron schedule
+- `CRON_SCHEDULE` — the cron job's actual schedule, in standard 5-field cron syntax (e.g. `0 13,21 * * *`), used to compute a real `nextRunAt`. This process can't read the cron job's schedule from Render directly, so keep it in sync by hand if the schedule ever changes. Omitted otherwise.
 
 ## Storybook & Chromatic
 
