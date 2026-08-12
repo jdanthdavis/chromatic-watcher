@@ -4,6 +4,8 @@
 
 A small Render Cron Job that checks Chromatic's Ashby job board and emails when new roles appear — plus a dashboard UI for that same data, built as a Storybook component library and visually tested with Chromatic on every PR.
 
+**Live:** [dashboard](https://chromatic-watcher-dashboard.onrender.com) · [API](https://chromatic-watcher-api.onrender.com/api/watcher-state) · [Storybook on Chromatic](https://www.chromatic.com/builds?appId=6a7bb9300c0960c8b410b57a)
+
 ## Setup
 
 1. Install dependencies:
@@ -43,7 +45,7 @@ A small Render Cron Job that checks Chromatic's Ashby job board and emails when 
    npm start -- --test-email
    ```
 
-   This sends a single test email without requiring a new job posting.
+   This sends a single test email without requiring a new job posting. Add `--test-email-no-new` instead to preview the "no new jobs" version of the email.
 
 ## Render Cron Job
 
@@ -68,7 +70,7 @@ A read-only HTTP API (`server/api.js`) that serves whatever `check-chromatic-job
 npm run api       # API at http://localhost:8787
 ```
 
-- `GET /api/watcher-state` — current jobs, what's new/removed since the last check, and a `connected` / `stale` / `error` status
+- `GET /api/watcher-state` — current jobs, what's new/removed since the last check, a `connected` / `stale` / `error` status, an estimated `nextRunAt`, and the last 20 runs (`history`)
 - `GET /healthz` — for Render's health check
 
 Extra environment variables (all optional):
@@ -91,9 +93,9 @@ npm run chromatic         # publish the current build to Chromatic
 
 ## Files
 
-- `check-chromatic-jobs.js` — fetches the Ashby Chromatic job board, diffs against Redis state, logs removed jobs, emails on new jobs, and records run metadata (`chromatic-jobs:meta`) for the API.
+- `check-chromatic-jobs.js` — fetches the Ashby Chromatic job board, diffs against Redis state, logs removed jobs, emails on new jobs, and records run metadata (`chromatic-jobs:meta`) and a rolling run log (`chromatic-jobs:history`) for the API.
 - `server/api.js` — read-only API that serves that Redis state to the dashboard.
-- `src/` — the dashboard: `App.tsx` and `components/` (with their stories), `api.ts` for the fetch, `fixtures/jobs.ts` for Storybook-only sample data, `types.ts`, `styles.css`.
+- `src/` — the dashboard: `App.tsx` and `components/` (with their stories), `api.ts` for the fetch, `utils.ts` for formatting, `fixtures/jobs.ts` for Storybook-only sample data, `types.ts`, `styles.css`, `vite-env.d.ts`.
 - `.storybook/` — Storybook configuration.
 - `.github/workflows/chromatic.yml` — CI pipeline that publishes to Chromatic.
 - `package.json` — Node.js metadata and dependencies for both the cron job and the dashboard.

@@ -1,7 +1,7 @@
 {
   "name": "chromatic-watcher",
   "version": "0.1.0",
-  "description": "Render Cron Job for monitoring Chromatic job postings via Ashby's public API.",
+  "description": "Chromatic job board watcher: a Render Cron Job, a dashboard UI, and a Storybook component library visually tested with Chromatic in CI.",
   "type": "commonjs",
   "main": "check-chromatic-jobs.js",
   "scripts": {
