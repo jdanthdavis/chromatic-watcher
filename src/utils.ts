@@ -1,4 +1,4 @@
-import type { HistoryEntry } from './types';
+import type { ChromaticBuild, HistoryEntry } from './types';
 
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
@@ -21,6 +21,23 @@ export function summarizeHistoryEntry(entry: HistoryEntry): string {
     default:
       return 'Check completed';
   }
+}
+
+// Chromatic's webhook fires once per status change (PUBLISHED, PREPARED,
+// IN_PROGRESS, ACCEPTED, ...), so one build shows up as several list
+// entries with the same `number`. The list is newest-first, so the first
+// entry seen for a given number is its latest known status — this keeps
+// just that one, so counts and the build list reflect distinct builds.
+export function dedupeBuildsByNumber(builds: ChromaticBuild[]): ChromaticBuild[] {
+  const seen = new Set<number | string>();
+  const deduped: ChromaticBuild[] = [];
+  for (const build of builds) {
+    const key = build.number ?? build.receivedAt;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(build);
+  }
+  return deduped;
 }
 
 export function formatPublishedAt(publishedAt: string | null): string {

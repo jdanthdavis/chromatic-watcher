@@ -78,6 +78,49 @@ button:focus-visible {
   padding: 40px 20px 80px;
 }
 
+/* tabs (Jobs / Chromatic Builds / Checks) */
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+}
+
+.tab--active {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.tab__count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-faint);
+}
+
+.tab--active .tab__count {
+  color: var(--accent-strong);
+}
+
 /* header */
 .app-header {
   display: flex;
@@ -197,8 +240,16 @@ button:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-.stat-card__value--new {
+.stat-card__value--highlight {
   color: var(--new);
+}
+
+.stat-card__value--good {
+  color: var(--good);
+}
+
+.stat-card__value--bad {
+  color: var(--danger);
 }
 
 .stat-card__label {
