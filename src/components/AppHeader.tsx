@@ -22,7 +22,7 @@ export function AppHeader({ status, lastCheckedLabel, nextRunLabel, checking, on
       <div className="app-header__actions">
         <StatusPill status={status} />
         <button className="btn" type="button" onClick={onCheckNow} disabled={checking}>
-          {checking ? 'Checking…' : 'Check now'}
+          {checking ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
     </header>

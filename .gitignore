@@ -3,5 +3,6 @@ node_modules/
 .env
 dist/
 storybook-static/
+dump.rdb
 
 *storybook.log

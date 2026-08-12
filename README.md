@@ -51,12 +51,31 @@ In Render, use the `npm start` command for the cron job and provide the same env
 
 ## Dashboard
 
-A read-only view of the same job data, built with React + Vite + TypeScript. It currently renders from fixtures in `src/fixtures/jobs.ts` rather than live Redis data.
+A read-only view of the same job data, built with React + Vite + TypeScript. It fetches from the watcher API below (`GET /api/watcher-state`) rather than talking to Redis directly.
 
 ```bash
-npm run dev       # dashboard at http://localhost:5183
+npm run dev       # dashboard at http://localhost:5183, proxies /api to the watcher API
 npm run build     # production build to dist/
 ```
+
+For a production build, point it at the deployed API with `VITE_API_BASE_URL` (e.g. in Render's static site environment variables). Left unset, requests go to the same origin the dashboard is served from.
+
+## Watcher API
+
+A read-only HTTP API (`server/api.js`) that serves whatever `check-chromatic-jobs.js` last wrote to Redis — it never talks to Ashby and never writes. Deploy it as a second Render Web Service alongside the cron job, pointed at the same `REDIS_URL`.
+
+```bash
+npm run api       # API at http://localhost:8787
+```
+
+- `GET /api/watcher-state` — current jobs, what's new/removed since the last check, and a `connected` / `stale` / `error` status
+- `GET /healthz` — for Render's health check
+
+Extra environment variables (all optional):
+
+- `PORT` (default `8787`)
+- `STALE_AFTER_MINUTES` (default `120`) — how long since the last successful check before the dashboard shows "stale" instead of "connected"
+- `CRON_INTERVAL_MINUTES` — if set, lets the dashboard show an estimated next-run time; omitted otherwise, since this process can't see Render's actual cron schedule
 
 ## Storybook & Chromatic
 
@@ -72,8 +91,9 @@ npm run chromatic         # publish the current build to Chromatic
 
 ## Files
 
-- `check-chromatic-jobs.js` — fetches the Ashby Chromatic job board, diffs against Redis state, logs removed jobs, and emails on new jobs.
-- `src/` — the dashboard: `App.tsx` and `components/` (with their stories), `fixtures/jobs.ts` for sample data, `types.ts`, `styles.css`.
+- `check-chromatic-jobs.js` — fetches the Ashby Chromatic job board, diffs against Redis state, logs removed jobs, emails on new jobs, and records run metadata (`chromatic-jobs:meta`) for the API.
+- `server/api.js` — read-only API that serves that Redis state to the dashboard.
+- `src/` — the dashboard: `App.tsx` and `components/` (with their stories), `api.ts` for the fetch, `fixtures/jobs.ts` for Storybook-only sample data, `types.ts`, `styles.css`.
 - `.storybook/` — Storybook configuration.
 - `.github/workflows/chromatic.yml` — CI pipeline that publishes to Chromatic.
 - `package.json` — Node.js metadata and dependencies for both the cron job and the dashboard.

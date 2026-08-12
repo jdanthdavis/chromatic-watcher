@@ -9,6 +9,9 @@ const nodemailer = require('nodemailer');
 
 const ASHBY_API_URL = 'https://api.ashbyhq.com/posting-api/job-board/chromatic';
 const REDIS_KEY = 'chromatic-jobs';
+// Run metadata (last-checked time, what changed, last error) — read by the
+// dashboard API (server/api.js) to show live status alongside the job list.
+const META_KEY = 'chromatic-jobs:meta';
 const args = process.argv.slice(2);
 const {
   REDIS_URL,
@@ -332,6 +335,34 @@ async function sendTestEmailNoNew() {
   await sendJobsEmail(currentJobs, sampleNewJobs);
 }
 
+async function writeMeta(redis, { newJobIds, removedCount }) {
+  const meta = {
+    lastCheckedAt: timeStamp(),
+    newJobIds,
+    removedCount,
+    lastError: null,
+    lastErrorAt: null,
+  };
+  await redis.set(META_KEY, JSON.stringify(meta));
+}
+
+async function writeErrorMeta(redis, error) {
+  try {
+    const existingRaw = await redis.get(META_KEY);
+    const existing = existingRaw ? JSON.parse(existingRaw) : {};
+    const meta = {
+      ...existing,
+      lastError: error instanceof Error ? error.message : String(error),
+      lastErrorAt: timeStamp(),
+    };
+    await redis.set(META_KEY, JSON.stringify(meta));
+  } catch (metaError) {
+    // Best-effort only — if Redis is unreachable this write will also fail,
+    // and the original error is what actually matters for the exit code.
+    logError('Could not record failure metadata to Redis', metaError);
+  }
+}
+
 async function run() {
   logInfo(`Starting Chromatic watcher on ${isRender ? 'Render' : 'local'} environment`);
   if (TEST_EMAIL_NO_NEW_MODE) {
@@ -373,6 +404,7 @@ async function run() {
       const newJobs = [];
       await sendJobsEmail(currentJobs, newJobs);
       await redis.set(REDIS_KEY, JSON.stringify(currentJobs, null, 2));
+      await writeMeta(redis, { newJobIds: [], removedCount: 0 });
       logSuccess(`Saved ${currentJobs.length} jobs to Redis under ${REDIS_KEY}.`);
       return;
     }
@@ -398,7 +430,11 @@ async function run() {
 
     await sendJobsEmail(currentJobs, newJobs);
     await redis.set(REDIS_KEY, JSON.stringify(currentJobs, null, 2));
+    await writeMeta(redis, { newJobIds: newJobs.map((job) => job.id), removedCount: removedJobs.length });
     logSuccess('Current job state saved to Redis.');
+  } catch (error) {
+    await writeErrorMeta(redis, error);
+    throw error;
   } finally {
     await redis.disconnect();
   }

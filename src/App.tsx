@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppHeader } from './components/AppHeader';
 import { StatRow, type Stat } from './components/StatRow';
 import { NewJobsSection } from './components/NewJobsSection';
 import { DepartmentGroup } from './components/DepartmentGroup';
 import { EmptyState } from './components/EmptyState';
-import { sampleWatcherState } from './fixtures/jobs';
+import { ErrorState } from './components/ErrorState';
+import { fetchWatcherState } from './api';
 import { formatRelativeTime } from './utils';
-import type { Job } from './types';
+import type { Job, WatcherState } from './types';
 
 function groupByDepartment(jobs: Job[]): Map<string, Job[]> {
   const groups = new Map<string, Job[]>();
@@ -20,27 +21,58 @@ function groupByDepartment(jobs: Job[]): Map<string, Job[]> {
 }
 
 export function App() {
-  const [state] = useState(sampleWatcherState);
-  const [checking, setChecking] = useState(false);
+  const [state, setState] = useState<WatcherState | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const newJobIds = useMemo(() => new Set(state.newJobIds), [state.newJobIds]);
-  const newJobs = useMemo(() => state.jobs.filter((job) => newJobIds.has(job.id)), [state.jobs, newJobIds]);
-  const remainingJobs = useMemo(() => state.jobs.filter((job) => !newJobIds.has(job.id)), [state.jobs, newJobIds]);
+  const load = useCallback(async (isRefresh = false) => {
+    setRefreshing(isRefresh);
+    setError(null);
+    try {
+      setState(await fetchWatcherState());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load the job board.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const jobs = state?.jobs ?? [];
+  const newJobIds = useMemo(() => new Set(state?.newJobIds ?? []), [state]);
+  const newJobs = useMemo(() => jobs.filter((job) => newJobIds.has(job.id)), [jobs, newJobIds]);
+  const remainingJobs = useMemo(() => jobs.filter((job) => !newJobIds.has(job.id)), [jobs, newJobIds]);
   const remainingByDepartment = useMemo(() => groupByDepartment(remainingJobs), [remainingJobs]);
-
-  const departmentCount = useMemo(() => groupByDepartment(state.jobs).size, [state.jobs]);
+  const departmentCount = useMemo(() => groupByDepartment(jobs).size, [jobs]);
 
   const stats: Stat[] = [
-    { label: 'Open roles', value: state.jobs.length },
+    { label: 'Open roles', value: jobs.length },
     { label: 'New today', value: newJobs.length, emphasize: newJobs.length > 0 },
     { label: 'Departments', value: departmentCount },
-    { label: 'Removed', value: state.removedCount },
+    { label: 'Removed', value: state?.removedCount ?? 0 },
   ];
 
-  function handleCheckNow() {
-    setChecking(true);
-    // Phase 1: fixtures only — Phase 3 wires this to the live read API.
-    window.setTimeout(() => setChecking(false), 900);
+  if (loading) {
+    return (
+      <div className="app-shell">
+        <div className="state-block">
+          <p className="state-block__title">Loading the job board…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !state) {
+    return (
+      <div className="app-shell">
+        <ErrorState message={error ?? 'Could not load the job board.'} onRetry={() => load()} />
+      </div>
+    );
   }
 
   return (
@@ -49,19 +81,19 @@ export function App() {
         status={state.status}
         lastCheckedLabel={`Last checked ${formatRelativeTime(state.lastCheckedAt)}`}
         nextRunLabel={state.nextRunAt ? `next run ${formatRelativeTime(state.nextRunAt)}` : ''}
-        checking={checking}
-        onCheckNow={handleCheckNow}
+        checking={refreshing}
+        onCheckNow={() => load(true)}
       />
 
       <StatRow stats={stats} />
 
       <NewJobsSection jobs={newJobs} />
 
-      {state.jobs.length === 0 ? (
+      {jobs.length === 0 ? (
         <EmptyState />
       ) : (
-        [...remainingByDepartment.entries()].map(([department, jobs]) => (
-          <DepartmentGroup key={department} department={department} jobs={jobs} />
+        [...remainingByDepartment.entries()].map(([department, deptJobs]) => (
+          <DepartmentGroup key={department} department={department} jobs={deptJobs} />
         ))
       )}
     </div>
