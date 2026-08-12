@@ -64,20 +64,29 @@ For a production build, point it at the deployed API with `VITE_API_BASE_URL` (e
 
 ## Watcher API
 
-A read-only HTTP API (`server/api.js`) that serves whatever `check-chromatic-jobs.js` last wrote to Redis — it never talks to Ashby and never writes. Deploy it as a second Render Web Service alongside the cron job, pointed at the same `REDIS_URL`.
+An HTTP API (`server/api.js`) that mostly serves whatever `check-chromatic-jobs.js` last wrote to Redis — it never talks to Ashby, and its only write path is recording Chromatic's own webhook payloads (below). Deploy it as a second Render Web Service alongside the cron job, pointed at the same `REDIS_URL`.
 
 ```bash
 npm run api       # API at http://localhost:8787
 ```
 
 - `GET /api/watcher-state` — current jobs, what's new/removed since the last check, a `connected` / `stale` / `error` status, an estimated `nextRunAt`, and the last 20 runs (`history`)
+- `GET /api/chromatic-builds` — the last 20 Chromatic builds, populated by Chromatic's own webhook (see below)
+- `POST /webhooks/chromatic/:token` — where Chromatic posts build-status updates. `:token` must match `CHROMATIC_WEBHOOK_TOKEN`; anything else 404s
 - `GET /healthz` — for Render's health check
 
-Extra environment variables (all optional):
+Extra environment variables (all optional, except `CHROMATIC_WEBHOOK_TOKEN` if you want the builds panel to work):
 
 - `PORT` (default `8787`)
 - `STALE_AFTER_MINUTES` (default `120`) — how long since the last successful check before the dashboard shows "stale" instead of "connected"
 - `CRON_SCHEDULE` — the cron job's actual schedule, in standard 5-field cron syntax (e.g. `0 13,21 * * *`), used to compute a real `nextRunAt`. This process can't read the cron job's schedule from Render directly, so keep it in sync by hand if the schedule ever changes. Omitted otherwise.
+- `CHROMATIC_WEBHOOK_TOKEN` — a random secret you generate yourself. It's the last path segment of the webhook URL you give Chromatic (`/webhooks/chromatic/<token>`) and the only thing standing between this endpoint and anyone who finds the URL, since Chromatic doesn't sign these requests by default. Leave unset to disable the route entirely.
+
+### Wiring up the Chromatic builds panel
+
+1. Generate a random token and set it as `CHROMATIC_WEBHOOK_TOKEN` on the API service.
+2. In Chromatic, go to the project's Manage page → Integrations → Add webhook, and paste `https://<your-api-domain>/webhooks/chromatic/<token>`.
+3. Every build status change now lands in `chromatic-jobs:chromatic-builds` in Redis. Only builds *after* this is set up will appear — there's no backfill.
 
 ## Storybook & Chromatic
 
@@ -94,7 +103,7 @@ npm run chromatic         # publish the current build to Chromatic
 ## Files
 
 - `check-chromatic-jobs.js` — fetches the Ashby Chromatic job board, diffs against Redis state, logs removed jobs, emails on new jobs, and records run metadata (`chromatic-jobs:meta`) and a rolling run log (`chromatic-jobs:history`) for the API.
-- `server/api.js` — read-only API that serves that Redis state to the dashboard.
+- `server/api.js` — serves that Redis state to the dashboard, and receives Chromatic's build webhook.
 - `src/` — the dashboard: `App.tsx` and `components/` (with their stories), `api.ts` for the fetch, `utils.ts` for formatting, `fixtures/jobs.ts` for Storybook-only sample data, `types.ts`, `styles.css`, `vite-env.d.ts`.
 - `.storybook/` — Storybook configuration.
 - `.github/workflows/chromatic.yml` — CI pipeline that publishes to Chromatic.
