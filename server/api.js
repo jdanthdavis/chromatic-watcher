@@ -13,6 +13,12 @@ const cronParser = require('cron-parser');
 const REDIS_KEY = 'chromatic-jobs';
 const META_KEY = 'chromatic-jobs:meta';
 const HISTORY_KEY = 'chromatic-jobs:history';
+// Recent Chromatic build results, newest first — populated by Chromatic's
+// own custom webhook (https://www.chromatic.com/docs/custom-webhooks/),
+// not by anything this repo runs.
+const CHROMATIC_BUILDS_KEY = 'chromatic-jobs:chromatic-builds';
+const CHROMATIC_BUILDS_LIMIT = 20;
+const MAX_WEBHOOK_BODY_BYTES = 1_000_000;
 
 const {
   REDIS_URL,
@@ -26,6 +32,11 @@ const {
   // kept in sync with the cron job's schedule in Render by hand — there's
   // no API linkage between the two services. Leave unset to omit nextRunAt.
   CRON_SCHEDULE,
+  // Shared secret in the webhook URL path (/webhooks/chromatic/<token>).
+  // Chromatic doesn't sign these by default (that needs a support request),
+  // so this is the baseline protection against randos posting fake builds.
+  // Unset means the webhook route is disabled entirely.
+  CHROMATIC_WEBHOOK_TOKEN,
 } = process.env;
 
 if (!REDIS_URL) {
@@ -111,6 +122,82 @@ async function getWatcherState() {
   };
 }
 
+async function getChromaticBuilds() {
+  const raw = await redis.lRange(CHROMATIC_BUILDS_KEY, 0, -1);
+  return raw.map((entry) => JSON.parse(entry));
+}
+
+function normalizeChromaticBuild(build) {
+  return {
+    receivedAt: timeStamp(),
+    number: build.number ?? null,
+    branch: build.branch ?? null,
+    commit: build.commit ?? null,
+    status: build.status ?? null,
+    result: build.result ?? null,
+    changeCount: build.changeCount ?? 0,
+    componentCount: build.componentCount ?? 0,
+    specCount: build.specCount ?? 0,
+    storybookUrl: build.storybookUrl ?? null,
+    webUrl: build.webUrl ?? null,
+  };
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (chunk) => {
+      data += chunk;
+      if (data.length > MAX_WEBHOOK_BODY_BYTES) {
+        reject(new Error('Payload too large'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      try {
+        resolve(data ? JSON.parse(data) : {});
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+async function handleChromaticWebhook(req, res, token) {
+  if (!CHROMATIC_WEBHOOK_TOKEN || token !== CHROMATIC_WEBHOOK_TOKEN) {
+    // Same response as any other unmatched route — don't confirm or deny
+    // that a token was close to correct.
+    sendJson(res, 404, { error: 'Not found' });
+    return;
+  }
+
+  let payload;
+  try {
+    payload = await readJsonBody(req);
+  } catch (error) {
+    logError('Could not parse Chromatic webhook payload', error);
+    sendJson(res, 400, { error: 'Invalid payload' });
+    return;
+  }
+
+  if (!payload.build) {
+    sendJson(res, 400, { error: 'Missing build in payload' });
+    return;
+  }
+
+  try {
+    const entry = normalizeChromaticBuild(payload.build);
+    await redis.lPush(CHROMATIC_BUILDS_KEY, JSON.stringify(entry));
+    await redis.lTrim(CHROMATIC_BUILDS_KEY, 0, CHROMATIC_BUILDS_LIMIT - 1);
+    logInfo(`Recorded Chromatic build #${entry.number} (${entry.status}/${entry.result}).`);
+    sendJson(res, 200, { ok: true });
+  } catch (error) {
+    logError('Failed to record Chromatic build', error);
+    sendJson(res, 503, { error: 'Could not reach Redis.' });
+  }
+}
+
 function sendJson(res, statusCode, body) {
   const payload = JSON.stringify(body);
   res.writeHead(statusCode, {
@@ -123,26 +210,39 @@ function sendJson(res, statusCode, body) {
   res.end(payload);
 }
 
-const server = http.createServer((req, res) => {
-  if (req.method !== 'GET') {
-    sendJson(res, 405, { error: 'Method not allowed' });
-    return;
-  }
+const WEBHOOK_PATH_PREFIX = '/webhooks/chromatic/';
 
+const server = http.createServer((req, res) => {
   const { pathname } = new URL(req.url, `http://${req.headers.host}`);
 
-  if (pathname === '/healthz') {
+  if (req.method === 'GET' && pathname === '/healthz') {
     sendJson(res, 200, { ok: true });
     return;
   }
 
-  if (pathname === '/api/watcher-state') {
+  if (req.method === 'GET' && pathname === '/api/watcher-state') {
     getWatcherState()
       .then((state) => sendJson(res, 200, state))
       .catch((error) => {
         logError('Failed to read watcher state from Redis', error);
         sendJson(res, 503, { error: 'Could not reach Redis.' });
       });
+    return;
+  }
+
+  if (req.method === 'GET' && pathname === '/api/chromatic-builds') {
+    getChromaticBuilds()
+      .then((builds) => sendJson(res, 200, { builds }))
+      .catch((error) => {
+        logError('Failed to read Chromatic builds from Redis', error);
+        sendJson(res, 503, { error: 'Could not reach Redis.' });
+      });
+    return;
+  }
+
+  if (req.method === 'POST' && pathname.startsWith(WEBHOOK_PATH_PREFIX)) {
+    const token = pathname.slice(WEBHOOK_PATH_PREFIX.length);
+    handleChromaticWebhook(req, res, token);
     return;
   }
 

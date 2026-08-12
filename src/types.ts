@@ -34,3 +34,21 @@ export interface WatcherState {
   removedCount: number;
   history: HistoryEntry[];
 }
+
+// Pushed by Chromatic's own custom webhook on build status changes — the
+// exact set of `status`/`result` values isn't fully documented, so these
+// stay as plain strings rather than a closed union; components fall back
+// gracefully for anything unrecognized.
+export interface ChromaticBuild {
+  receivedAt: string;
+  number: number | null;
+  branch: string | null;
+  commit: string | null;
+  status: string | null;
+  result: string | null;
+  changeCount: number;
+  componentCount: number;
+  specCount: number;
+  storybookUrl: string | null;
+  webUrl: string | null;
+}

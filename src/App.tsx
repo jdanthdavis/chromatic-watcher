@@ -6,9 +6,10 @@ import { DepartmentGroup } from './components/DepartmentGroup';
 import { EmptyState } from './components/EmptyState';
 import { ErrorState } from './components/ErrorState';
 import { HistoryTimeline } from './components/HistoryTimeline';
-import { fetchWatcherState } from './api';
+import { ChromaticBuildList } from './components/ChromaticBuildList';
+import { fetchChromaticBuilds, fetchWatcherState } from './api';
 import { formatRelativeTime } from './utils';
-import type { Job, WatcherState } from './types';
+import type { ChromaticBuild, Job, WatcherState } from './types';
 
 function groupByDepartment(jobs: Job[]): Map<string, Job[]> {
   const groups = new Map<string, Job[]>();
@@ -24,20 +25,36 @@ function groupByDepartment(jobs: Job[]): Map<string, Job[]> {
 export function App() {
   const [state, setState] = useState<WatcherState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [builds, setBuilds] = useState<ChromaticBuild[]>([]);
+  const [buildsError, setBuildsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // The two fetches are independent — a broken Chromatic builds panel
+  // shouldn't take down the primary job-board view, and vice versa.
   const load = useCallback(async (isRefresh = false) => {
     setRefreshing(isRefresh);
     setError(null);
-    try {
-      setState(await fetchWatcherState());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load the job board.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+    setBuildsError(null);
+
+    const [stateResult, buildsResult] = await Promise.allSettled([fetchWatcherState(), fetchChromaticBuilds()]);
+
+    if (stateResult.status === 'fulfilled') {
+      setState(stateResult.value);
+    } else {
+      setError(stateResult.reason instanceof Error ? stateResult.reason.message : 'Could not load the job board.');
     }
+
+    if (buildsResult.status === 'fulfilled') {
+      setBuilds(buildsResult.value);
+    } else {
+      setBuildsError(
+        buildsResult.reason instanceof Error ? buildsResult.reason.message : 'Could not load recent Chromatic builds.',
+      );
+    }
+
+    setLoading(false);
+    setRefreshing(false);
   }, []);
 
   useEffect(() => {
@@ -96,6 +113,13 @@ export function App() {
         [...remainingByDepartment.entries()].map(([department, deptJobs]) => (
           <DepartmentGroup key={department} department={department} jobs={deptJobs} />
         ))
+      )}
+
+      <p className="section-label">Recent Chromatic builds</p>
+      {buildsError ? (
+        <p className="history-row__timestamp">Couldn't load recent Chromatic builds.</p>
+      ) : (
+        <ChromaticBuildList builds={builds} />
       )}
 
       <p className="section-label">Recent checks</p>
