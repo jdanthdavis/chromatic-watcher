@@ -88,6 +88,8 @@ Extra environment variables (all optional, except `CHROMATIC_WEBHOOK_TOKEN` if y
 2. In Chromatic, go to the project's Manage page → Integrations → Add webhook, and paste `https://<your-api-domain>/webhooks/chromatic/<token>`.
 3. Every build status change now lands in `chromatic-jobs:chromatic-builds` in Redis. Only builds *after* this is set up will appear — there's no backfill.
 
+This is already done for the live deployment above — the webhook is registered on the Chromatic project, so the dashboard's "Recent Chromatic builds" panel fills in as PRs get built.
+
 ## Storybook & Chromatic
 
 Every dashboard component has stories covering its states in `src/components/*.stories.tsx`.
